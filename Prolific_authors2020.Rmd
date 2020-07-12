@@ -1,0 +1,156 @@
+---
+title: "Prolific percentage compute"
+output: html_notebook
+---
+
+Dated July 2020
+by D V M Bishop
+
+Script to compute for individual journals the percentage of publications contributed by the most prolific author.  
+
+
+```{r setup, include=FALSE}
+require(tidyverse)
+require(gdata)
+require(dmm) #for unfactor
+require(stringr)
+```
+# Background
+The script uses the wosr package. With this, it is possible to obtain a link that allows one to pull in records from queries to Web of Science, provided the IP address has a legitmate WoS licence.  
+https://www.rdocumentation.org/packages/wosr/versions/0.3.0
+
+# Journals
+First step is to identify a set of journals to check. Here the interest is in the two journals where Griffiths MD publishes many papers, so we need other journals in that subject area. The list here is taken from papers that have cited Griffiths MD: these journals appeared in at least 10 citations. Huge generalist journals (PLOS One and Scientific Reports) are excluded. This list was compiled by downloading citations manually from Web of Science, as it is not possible to pull in citations without further permissions. Users can specify any list of journals here.
+
+
+```{r getjournals}
+myj <- c('ADDICTA-THE TURKISH JOURNAL ON ADDICTIONS', 'ADDICTION', 'ADDICTION RESEARCH & THEORY', 'ADDICTIVE BEHAVIORS', 'ADICCIONES', 'ALOMA-REVISTA DE PSICOLOGIA CIENCIES DE L EDUCACIO I DE L ESPORT', 'AMERICAN JOURNAL OF FAMILY THERAPY', 'AMERICAN JOURNAL ON ADDICTIONS', 'ANADOLU PSIKIYATRI DERGISI-ANATOLIAN JOURNAL OF PSYCHIATRY', 'ANALES DE PSICOLOGIA', 'ANNALES MEDICO-PSYCHOLOGIQUES', 'ARCHIVES OF SEXUAL BEHAVIOR', 'ASIAN JOURNAL OF PSYCHIATRY', 'AUSTRALIAN AND NEW ZEALAND JOURNAL OF PSYCHIATRY', 'BEHAVIORAL SCIENCES', 'BEHAVIOUR & INFORMATION TECHNOLOGY', 'BMC PSYCHIATRY', 'BMC PUBLIC HEALTH', 'BMJ OPEN', 'BRITISH JOURNAL OF PSYCHOLOGY', 'CHILDREN AND YOUTH SERVICES REVIEW', 'CLINICAL NEUROPSYCHIATRY', 'CLINICAL PSYCHOLOGY REVIEW', 'CNS SPECTRUMS', 'COMMUNICATION RESEARCH', 'COMPREHENSIVE PSYCHIATRY', 'COMPUTERS & EDUCATION', 'COMPUTERS IN HUMAN BEHAVIOR', 'CURRENT OPINION IN BEHAVIORAL SCIENCES', 'CURRENT PSYCHOLOGY', 'CYBERPSYCHOLOGY BEHAVIOR AND SOCIAL NETWORKING', 'CYBERPSYCHOLOGY-JOURNAL OF PSYCHOSOCIAL RESEARCH ON CYBERSPACE', 'DUSUNEN ADAM-JOURNAL OF PSYCHIATRY AND NEUROLOGICAL SCIENCES', 'EDUCATION AND INFORMATION TECHNOLOGIES', 'ENCEPHALE-REVUE DE PSYCHIATRIE CLINIQUE BIOLOGIQUE ET THERAPEUTIQUE', 'EUROPEAN ADDICTION RESEARCH', 'EUROPEAN PSYCHIATRY', 'FRONTIERS IN BEHAVIORAL NEUROSCIENCE', 'FRONTIERS IN PSYCHIATRY', 'FRONTIERS IN PSYCHOLOGY', 'GAMES AND CULTURE', 'GAMES FOR HEALTH JOURNAL', 'GAMING LAW REVIEW-ECONOMICS REGULATION COMPLIANCE AND POLICY', 'HARM REDUCTION JOURNAL', 'INFORMATION & MANAGEMENT', 'INTERNATIONAL GAMBLING STUDIES', 'INTERNATIONAL JOURNAL OF ENVIRONMENTAL RESEARCH AND PUBLIC HEALTH', 'INTERNATIONAL JOURNAL OF HUMAN-COMPUTER INTERACTION', 'INTERNATIONAL JOURNAL OF MENTAL HEALTH AND ADDICTION', 'INTERNET RESEARCH', 'JMIR MENTAL HEALTH', 'JOURNAL OF ADDICTIONS NURSING', 'JOURNAL OF ADDICTIVE DISEASES', 'JOURNAL OF ADOLESCENCE', 'JOURNAL OF ADOLESCENT HEALTH', 'JOURNAL OF AFFECTIVE DISORDERS', 'JOURNAL OF APPLIED SOCIAL PSYCHOLOGY', 'JOURNAL OF BEHAVIORAL ADDICTIONS', 'JOURNAL OF CHILD AND FAMILY STUDIES', 'JOURNAL OF CLINICAL MEDICINE', 'JOURNAL OF COMPUTER-MEDIATED COMMUNICATION', 'JOURNAL OF GAMBLING ISSUES', 'JOURNAL OF GAMBLING STUDIES', 'JOURNAL OF HEALTH PSYCHOLOGY', 'JOURNAL OF MEDIA PSYCHOLOGY-THEORIES METHODS AND APPLICATIONS', 'JOURNAL OF MEDICAL INTERNET RESEARCH', 'JOURNAL OF PSYCHIATRIC RESEARCH', 'JOURNAL OF SEX RESEARCH', 'JOURNAL OF YOUTH AND ADOLESCENCE', 'MEDIA PSYCHOLOGY', 'MINDFULNESS', 'NEUROSCIENCE AND BIOBEHAVIORAL REVIEWS', 'NEW MEDIA & SOCIETY', 'NORDIC STUDIES ON ALCOHOL AND DRUGS', 'ONLINE INFORMATION REVIEW', 'PEDIATRICS', 'PERSONALITY AND INDIVIDUAL DIFFERENCES', 'PROGRESS IN NEURO-PSYCHOPHARMACOLOGY & BIOLOGICAL PSYCHIATRY', 'PSICOTHEMA', 'PSYCHIATRIA DANUBINA', 'PSYCHIATRIC QUARTERLY', 'PSYCHIATRY AND CLINICAL NEUROSCIENCES', 'PSYCHIATRY INVESTIGATION', 'PSYCHIATRY RESEARCH', 'PSYCHOLOGICAL REPORTS', 'PSYCHOLOGIST', 'PSYCHOLOGY OF ADDICTIVE BEHAVIORS', 'PSYCHOLOGY OF SPORT AND EXERCISE', 'PSYCHOLOGY RESEARCH AND BEHAVIOR MANAGEMENT', 'SCANDINAVIAN JOURNAL OF PSYCHOLOGY', 'SEX ROLES', 'SEXUAL ADDICTION & COMPULSIVITY-THE JOURNAL OF TREATMENT AND PREVENTION', 'SOCIAL BEHAVIOR AND PERSONALITY', 'SOCIAL SCIENCE COMPUTER REVIEW', 'STRESS AND HEALTH', 'STUDIES IN HIGHER EDUCATION', 'SUBSTANCE USE & MISUSE', 'SUSTAINABILITY', 'TELEMATICS AND INFORMATICS')
+
+```
+
+Obtain session identification code. You only need do this once per session. In my experience, it sometimes fails, even when accessing the script from a valid IP address with access to Web of Science. If you are working remotely and have access to WoS, you need to use VPN.
+
+```{r wosr.session}
+
+require(wosr) 
+#This gets the crucial session identifiers for using wosr
+sid<- auth(username = NULL,
+           password = NULL)
+
+
+```
+
+# WOSR Function
+This function below now pulls in papers specified by a given query.  
+It is advisable to use query_wos to find out how many records there are in a search - it can take hours if this is a large number, so you may want to specify an upper limit when deciding whether to proceed with search.
+
+```{r pullpapersfunction}
+
+pullpapers<-function(query){
+  # It's best to see how many records your query matches before actually
+  # downloading the data. To do this, call query_wos before running pull_wos:
+  myq<-query_wos(query, sid = sid) # shows N matching publications
+  #initialise in case of zero count
+  nrec<-0
+  mymax<-0
+  thisau<-''
+  if(myq$rec_cnt>0){
+    wos_data<-pull_wos(query,sid = sid) #key instruction for pulling in data
+    
+    nrec<-nrow(wos_data$publication)
+    myau<-wos_data$author #identify all authors
+    myt<-table(myau$display_name) #tabulate frequency of authors
+    mytt<-data.frame(myt)
+    max(mytt$Freq) #find highest N publications by one author
+    mymax<-max(mytt$Freq)
+    w<-which(mytt$Freq==mymax) #find the author with that N
+    thisau<-mytt$Var1[w[1]]
+  }
+  return(list(nrec,mymax,thisau)) #function returns N papers found, N for author with maximum N papers, and identity of that author
+} 
+```
+
+The next chunk can be used to just check if the function works. You need to wait for the papers to be extracted from WoS - this occurs in two steps and can take minutes or even hours.
+It is especially slow if there are any papers with more than 100 authors. 
+```{r pullpaperscheck}
+docheck <- 0 #change to 1 to run the check. 
+if(docheck==1){
+  query <- 'SO = ("Research in Autism Spectrum Disorders") AND PY = (2010) AND DT=("Article" OR "Review")'
+  
+  mybits<-pullpapers(query)
+}
+```
+
+We'll now compare various journals. 
+We have to specify a query in the correct format for wosr to recognise.
+There are some examples in wosr help.
+
+
+```{r makedt}
+journals <- data.frame(myj)
+#remove any with fewer than 10 papers
+journals$Narticle<-NA
+journals$Author<-NA
+journals$Nmax <- NA
+
+nj<-nrow(journals)
+
+for (j in 1:nj){
+  
+  thisj <-journals$myj[j]
+  print(j)
+  print(thisj)
+  mypy <- "(2015-2020)" #select range of publication years
+  #DT is document type - here specify Article or Review
+  query <- paste('SO = \"', thisj,'\" AND PY = ',mypy,' AND DT=(Article OR Review)')
+  mybits <- pullpapers(query)
+  journals$Narticle[j]<-unlist(mybits[1])
+  journals$Author[j]<-as.character(unlist(mybits[3]))
+  journals$Nmax[j]<-unlist(mybits[2])
+  
+}
+
+journals$p_prolific <- round(100*journals$Nmax/journals$Narticle,2)
+write.csv(journals,'journaldt.csv',row.names=F)
+
+```
+
+In the next chunk, a different set of journals is used, this time looking individually at different years.  
+
+
+```{r makeddy}
+x <- c('International Journal of Mental Health and Addiction','Journal of Behavioral Addictions','Journal of Developmental and Physical Disabilities','Developmental Neurorehabilitation','Research in Developmental Disabilities','Research in Autism Spectrum Disorders')
+y<-seq(2000,2020,1)
+
+dy <- expand.grid(Year = y,Journal = x )
+dy$Narticle<-NA
+dy$Author<-NA
+dy$Nmax<-NA
+
+startrow <-1
+
+#If you want to stop and start without losing data, you can reset startrow.
+if(startrow>1){
+  journaldt<-read.csv("dy.csv",stringsAsFactors=F)
+}
+mysearch<-startrow:nrow(dy)
+
+for (j in mysearch){
+  
+  thisj <-dy$Journal[j]
+  thisy <-dy$Year[j]
+  print(j)
+  print(thisj)
+  query <- paste('SO = \"', thisj,'\" AND PY = ',thisy,' AND DT=(Article OR Review)')
+  mybits <- pullpapers(query)
+  dy$Narticle[j]<-unlist(mybits[1])
+  dy$Author[j]<-as.character(unlist(mybits[3]))
+  dy$Nmax[j]<-unlist(mybits[2])
+  
+}
+
+dy$p_prolific <- round(100*dy$Nmax/dy$Narticle,2)
+write.csv(dy,'journal_dy.csv',row.names=F)
+
+```
+
