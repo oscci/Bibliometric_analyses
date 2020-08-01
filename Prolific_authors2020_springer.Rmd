@@ -1,0 +1,465 @@
+---
+title: "Prolific percentage compute"
+output: html_notebook
+---
+
+Dated July 2020
+by D V M Bishop
+
+Script to compute for individual journals the percentage of publications contributed by the most prolific author.  
+
+
+```{r setup, include=FALSE}
+require(tidyverse)
+require(gdata)
+require(dmm) #for unfactor
+require(stringr)
+```
+# Background
+The script uses the wosr package. With this, it is possible to obtain a link that allows one to pull in records from queries to Web of Science, provided the IP address has a legitmate WoS licence.  
+https://www.rdocumentation.org/packages/wosr/versions/0.3.0
+
+# Journals
+First step is to identify a set of journals to check. Here the interest is in the two journals where Griffiths MD publishes many papers, so we need other journals in that subject area. The list here is taken from papers that have cited Griffiths MD: these journals appeared in at least 10 citations. Huge generalist journals (PLOS One and Scientific Reports) are excluded. This list was compiled by downloading citations manually from Web of Science, as it is not possible to pull in citations without further permissions. Users can specify any list of journals here.
+
+
+```{r getjournals}
+myj <- c('ADDICTA-THE TURKISH JOURNAL ON ADDICTIONS', 'ADDICTION', 'ADDICTION RESEARCH & THEORY', 'ADDICTIVE BEHAVIORS', 'ADICCIONES', 'ALOMA-REVISTA DE PSICOLOGIA CIENCIES DE L EDUCACIO I DE L ESPORT', 'AMERICAN JOURNAL OF FAMILY THERAPY', 'AMERICAN JOURNAL ON ADDICTIONS', 'ANADOLU PSIKIYATRI DERGISI-ANATOLIAN JOURNAL OF PSYCHIATRY', 'ANALES DE PSICOLOGIA', 'ANNALES MEDICO-PSYCHOLOGIQUES', 'ARCHIVES OF SEXUAL BEHAVIOR', 'ASIAN JOURNAL OF PSYCHIATRY', 'AUSTRALIAN AND NEW ZEALAND JOURNAL OF PSYCHIATRY', 'BEHAVIORAL SCIENCES', 'BEHAVIOUR & INFORMATION TECHNOLOGY', 'BMC PSYCHIATRY', 'BMC PUBLIC HEALTH', 'BMJ OPEN', 'BRITISH JOURNAL OF PSYCHOLOGY', 'CHILDREN AND YOUTH SERVICES REVIEW', 'CLINICAL NEUROPSYCHIATRY', 'CLINICAL PSYCHOLOGY REVIEW', 'CNS SPECTRUMS', 'COMMUNICATION RESEARCH', 'COMPREHENSIVE PSYCHIATRY', 'COMPUTERS & EDUCATION', 'COMPUTERS IN HUMAN BEHAVIOR', 'CURRENT OPINION IN BEHAVIORAL SCIENCES', 'CURRENT PSYCHOLOGY', 'CYBERPSYCHOLOGY BEHAVIOR AND SOCIAL NETWORKING', 'CYBERPSYCHOLOGY-JOURNAL OF PSYCHOSOCIAL RESEARCH ON CYBERSPACE', 'DUSUNEN ADAM-JOURNAL OF PSYCHIATRY AND NEUROLOGICAL SCIENCES', 'EDUCATION AND INFORMATION TECHNOLOGIES', 'ENCEPHALE-REVUE DE PSYCHIATRIE CLINIQUE BIOLOGIQUE ET THERAPEUTIQUE', 'EUROPEAN ADDICTION RESEARCH', 'EUROPEAN PSYCHIATRY', 'FRONTIERS IN BEHAVIORAL NEUROSCIENCE', 'FRONTIERS IN PSYCHIATRY', 'FRONTIERS IN PSYCHOLOGY', 'GAMES AND CULTURE', 'GAMES FOR HEALTH JOURNAL', 'GAMING LAW REVIEW-ECONOMICS REGULATION COMPLIANCE AND POLICY', 'HARM REDUCTION JOURNAL', 'INFORMATION & MANAGEMENT', 'INTERNATIONAL GAMBLING STUDIES', 'INTERNATIONAL JOURNAL OF ENVIRONMENTAL RESEARCH AND PUBLIC HEALTH', 'INTERNATIONAL JOURNAL OF HUMAN-COMPUTER INTERACTION', 'INTERNATIONAL JOURNAL OF MENTAL HEALTH AND ADDICTION', 'INTERNET RESEARCH', 'JMIR MENTAL HEALTH', 'JOURNAL OF ADDICTIONS NURSING', 'JOURNAL OF ADDICTIVE DISEASES', 'JOURNAL OF ADOLESCENCE', 'JOURNAL OF ADOLESCENT HEALTH', 'JOURNAL OF AFFECTIVE DISORDERS', 'JOURNAL OF APPLIED SOCIAL PSYCHOLOGY', 'JOURNAL OF BEHAVIORAL ADDICTIONS', 'JOURNAL OF CHILD AND FAMILY STUDIES', 'JOURNAL OF CLINICAL MEDICINE', 'JOURNAL OF COMPUTER-MEDIATED COMMUNICATION', 'JOURNAL OF GAMBLING ISSUES', 'JOURNAL OF GAMBLING STUDIES', 'JOURNAL OF HEALTH PSYCHOLOGY', 'JOURNAL OF MEDIA PSYCHOLOGY-THEORIES METHODS AND APPLICATIONS', 'JOURNAL OF MEDICAL INTERNET RESEARCH', 'JOURNAL OF PSYCHIATRIC RESEARCH', 'JOURNAL OF SEX RESEARCH', 'JOURNAL OF YOUTH AND ADOLESCENCE', 'MEDIA PSYCHOLOGY', 'MINDFULNESS', 'NEUROSCIENCE AND BIOBEHAVIORAL REVIEWS', 'NEW MEDIA & SOCIETY', 'NORDIC STUDIES ON ALCOHOL AND DRUGS', 'ONLINE INFORMATION REVIEW', 'PEDIATRICS', 'PERSONALITY AND INDIVIDUAL DIFFERENCES', 'PROGRESS IN NEURO-PSYCHOPHARMACOLOGY & BIOLOGICAL PSYCHIATRY', 'PSICOTHEMA', 'PSYCHIATRIA DANUBINA', 'PSYCHIATRIC QUARTERLY', 'PSYCHIATRY AND CLINICAL NEUROSCIENCES', 'PSYCHIATRY INVESTIGATION', 'PSYCHIATRY RESEARCH', 'PSYCHOLOGICAL REPORTS', 'PSYCHOLOGIST', 'PSYCHOLOGY OF ADDICTIVE BEHAVIORS', 'PSYCHOLOGY OF SPORT AND EXERCISE', 'PSYCHOLOGY RESEARCH AND BEHAVIOR MANAGEMENT', 'SCANDINAVIAN JOURNAL OF PSYCHOLOGY', 'SEX ROLES', 'SEXUAL ADDICTION & COMPULSIVITY-THE JOURNAL OF TREATMENT AND PREVENTION', 'SOCIAL BEHAVIOR AND PERSONALITY', 'SOCIAL SCIENCE COMPUTER REVIEW', 'STRESS AND HEALTH', 'STUDIES IN HIGHER EDUCATION', 'SUBSTANCE USE & MISUSE', 'SUSTAINABILITY', 'TELEMATICS AND INFORMATICS')
+
+```
+
+```{r springerlist}
+#THis is the first 4 pages of the behavioral science list from Springer. There are about 13 pages in all
+myj <- c('Neuropsychopharmacology','Molecular Autism','Current Obesity Reports','Educational Psychology Review','Neuropsychology Review','Behavior Research Methods','International Journal of Computer-Supported Collaborative Learning','European Child and Adolescent Psychiatry','Psychonomic Bulletin and Review','Harm Reduction Journal','Rheumatology and Therapy','Mindfulness','PharmacoEconomics','Journal of Neurodevelopmental Disorders','Clinical Child and Family Psychology Review','Brain Imaging and Behavior','Journal of Cancer Survivorship','Journal of Business and Psychology','The Patient','AIDS and behavior','Archives of Sexual Behavior','Journal of Youth and Adolescence','Prevention Science','Addiction Science and Clinical Practice','Journal of Autism and Developmental Disorders','Cognitive Neurodynamics','Translational Behavioral Medicine','Journal of Behavioral Medicine','Annals of Behavioral Medicine','International Journal of Bipolar Disorders','Journal of Abnormal Child Psychology','Animal Cognition','Journal of Gambling Studies','Journal of Eating Disorders','Journal of Nutrition, Health and Aging','Quality of life research','Dermatology and therapy','BMC Psychiatry','Cognitive Therapy and Research','International Journal for Equity in Health','Archives of Womens Mental Health','Applied Health Economics and Health Policy', 'Psychological Research','European Journal of Ageing','Sex Roles','Sexuality Research and Social Policy','Journal of Happiness Studies','Health and Quality of life outcomes','Administration and policy in mental health and mental health services','behavior genetics','human nature','cognitive, affective, and behavioral neuroscience','international journal of mental health systems','journal of occupational rehabilitation','journal of environmental health science and engineering','annals of general psychiatry','international journal of behavioral medicine','behavioral and brain functions','bmc psychiatry','borderline personality disorder and emotion dysregulation','child and adolescent psychiatry and mental health','journal of psychopathology and behavioral assessment','bmc palliative care','substance abuse treatment, prevention and policy','psychmetrika','school mental health','attention, perception and psychophysics','child psychiatry and human development','motivation and emotion','social indicators research','minds and machines','journal of nonverbal behavior','instructional science','the journal of primary prevention','memory and cognition','applied research in quality of life','computer supported cooperative work','zorg and welzijn','zeitschrift fur psychodrama und soziometrie','journal of human rights and social work' )
+
+#subset that had been missed
+#check names on WOS - in many cases need to remove 'and' for title to getmatch
+myj<-c("European Child Adolescent Psychiatry", "Psychonomic Bulletin Review", "Addiction Science Clinical Practice", "Journal of Nutrition, Health Aging", "psychological research psychologische forschung", "Administration and policy in mental health and mental health services research", "cognitive affective behavioral neuroscience", "Psychometrika", "Attention perception psychophysics", "child psychiatry human development", "journal of primary prevention", "memory cognition", "zorg welzijn")
+
+#Not on manual WOS: The Patient, Human Nature (many subvarieties with this title),
+#primary prevention: (more than one starting with this), zeitschrift fur psychodrama und soziometrie
+
+#Last tranche: remaining journals (webpage from 4-12)
+myj <- c("Journal of Human Rights and Social Work", 
+         "Journal of Well-Being Assessment", 
+         "Global Social Welfare", 
+         "Childhood Vulnerability Journal", 
+         "Tijdschrift voor Psychotherapie", 
+         "The Analysis of Verbal Behavior", 
+         "Quality and User Experience", 
+         "The Urban Review", 
+         "Trends in Psychology", 
+         "Education and Treatment of Children", 
+         "Journal of Child & Adolescent Trauma", 
+         "Contemporary Family Therapy", 
+         "American Journal of Dance Therapy", 
+         "Pulmonary Therapy", 
+         "Biological Theory", 
+         "Coaching Theorie & Praxis", 
+         "Measurement Instruments for the Social Sciences",
+         "Phenomenology and the Cognitive Sciences", 
+         "The American Journal of Psychoanalysis", 
+         "International Journal for the Advancement of Counselling",
+         "Bulletin of the Psychonomic Society",
+         "Journal of Technology in Behavioral Science",
+         "Organisationsberatung, Supervision, Coaching", 
+         "Activitas Nervosa Superior", 
+         "Psychological Studies", 
+         "Soziale Passagen", 
+         "Soziale Probleme", 
+         "Sozial Extra", 
+         "Somnologie", 
+         "Mind & Society", 
+         "Psychoanalysis, Culture & Society", 
+         "International Journal of Politics, Culture, and Society",
+         "Behavior and Social Issues", 
+         "SN Social Sciences", 
+         "Sexuality & Culture", 
+         "Journal of Health Service Psychology", 
+         "Occupational Health Science", 
+         "Evolutionary Psychological Science", 
+         "Computational Cognitive Science", 
+         "Journal of Cultural Cognitive Science", 
+         "Adversity and Resilience Science", 
+         "Affective Science", 
+         "Crime Science", 
+         "Contemporary School Psychology", 
+         "Adolescent Research Review", 
+         "Review of Philosophy and Psychology", "Cognitive Research: Principles and Implications",
+ "Augmented Human Research",
+ "Journal of Policy Practice and Research",
+ "Global Implementation Research and Applications",
+ "Neurological Research and Practice",
+ "Current Behavioral Neuroscience Reports",
+ "Journal of Patient-Reported Outcomes",
+ "Journal of Psychosocial Rehabilitation and Mental Health",
+ "cultura & psyché",
+ "Journal of Contemporary Psychotherapy",
+ "Psychotherapie Forum",
+ "psychopraxis. neuropraxis",
+ "Psychopraktijk",
+ "Pastoral Psychology",
+ "International Journal of Applied Positive Psychology",
+ "Journal of Police and Criminal Psychology",
+ "BMC Psychology",
+ "GZ - Psychologie",
+ "Psychological Injury and Law",
+ "InFo Neurologie + Psychiatrie",
+ "DNP - Der Neurologe & Psychiater",
+ "International Journal of Bullying Prevention",
+ "Kind & Adolescent Praktijk",
+ "Behavior Analysis in Practice",
+ "Adaptive Human Behavior and Physiology",
+ "PharmacoEconomics & Outcomes News",
+ "Leadership, Education, Personality",
+ "Journal of Pediatric Neuropsychology",
+ "Pallium",
+ "Journal of Organization Design",
+ "Journal of Cognitive Enhancement",
+ "NeuroTransmitter",
+ "Advances in Neurodevelopmental Disorders",
+ "Management Kinderopvang",
+ "Kinderopvang",
+ "Health & Justice",
+ "Jeugdbeleid",
+ "Jeugd en Co",
+ "Gender Issues",
+ "Brain Informatics",
+ "Human Arenas",
+ "Denkbeeld",
+ "Dagbesteding",
+ "Culture and Brain",
+ "Computational Brain & Behavior",
+ "Axiomathes",
+ "International Journal of Mental Health and Addiction",
+ "Social Psychology of Education",
+ "Annals of Dyslexia",
+ "The Journal of Behavioral Health Services & Research",
+ "The Australian Educational Researcher",
+ "Journal of Community Health",
+ "Journal of Public Health Policy",
+ "Child Indicators Research",
+ "Reading and Writing",
+ "Journal of Clinical Psychology in Medical Settings",
+ "neuropsychiatrie",
+ "Journal of Family Violence",
+ "Child & Youth Care Forum",
+ "Learning & Behavior",
+ "Journal of Child and Family Studies",
+ "Community Mental Health Journal",
+ "Review Journal of Autism and Developmental Disorders",
+ "European Journal of Psychology of Education",
+ "Applied Psychophysiology and Biofeedback",
+ "Culture, Medicine, and Psychiatry",
+ "Cognition,Technology & Work",
+ "Neuroethics",
+ "Journal of Religion and Health",
+ "Child and Adolescent Social Work Journal",
+ "Journal of Classification",
+ "Journal of Developmental and Life-Course Criminology",
+ "Race and Social Problems",
+ "Biosemiotics",
+ "Sexuality and Disability",
+ "The Psychological Record",
+ "Journal of Developmental and Physical Disabilities",
+ "Social Justice Research",
+ "Sleep and Biological Rhythms",
+ "Psicologia: Reflexão e Crítica",
+ "BioPsychoSocial Medicine",
+ "Journal of Behavioral Education",
+ "Journal of Rational-Emotive & Cognitive-Behavior Therapy",
+ "Kölner Zeitschrift für Soziologie und Sozialpsychologie",
+ "Zeitschrift für Erziehungswissenschaft",
+ "Clinical Social Work Journal",
+ "Der Nervenarzt",
+ "Journal of Family and Economic Issues",
+ "Journal of Adult Development",
+ "Journal of Psycholinguistic Research",
+ "Qualitative Sociology",
+ "Integrative Psychological and Behavioral Science",
+ "International Journal of Cognitive Therapy",
+ "Ethik in der Medizin",
+ "Psychotherapeut",
+ "Monatsschrift Kinderheilkunde",
+ "Zeitschrift für Angewandte Organisationspsychologie",
+ "Forum der Psychoanalyse")
+
+#Just check alternate forms for ones that found no records
+myj <- c("Journal of Verbal Behavior",
+         "Quality User Experience",
+         "Urban Review",
+         "Trends Psychology",
+         "American Journal of Psychoanalysis",
+         "Bulletin of Psychonomic Society",
+         "Mind and Society",
+         "Sexuality and Culture",
+         "Computational Brain and Behavior",
+         "Psychological Record",
+         "Nervenartz")
+```
+Obtain session identification code. You only need do this once per session. In my experience, it sometimes fails, even when accessing the script from a valid IP address with access to Web of Science. If you are working remotely and have access to WoS, you need to use VPN.
+
+```{r wosr.session}
+
+require(wosr) 
+#This gets the crucial session identifiers for using wosr
+sid<- auth(username = NULL,
+           password = NULL)
+
+
+```
+
+
+```{r elsevier}
+myj <- c("Addictive Behaviors Reports",
+"Ageing Research Reviews",
+"Body Image",
+"Cognitive Systems Research",
+"Current Opinion in Psychology",
+"Eating Behaviors",
+"Emotion, Space and Society",
+"International Journal of Child-Computer Interaction",
+"International Journal of Clinical and Health Psychology",
+"Internet Interventions",
+"Journal of Behavioral and Experimental Finance",
+"Journal of Choice Modelling",
+"Mental Health and Physical Activity",
+"Osteoporosis and Sarcopenia",
+"Revista de la Educación Superior",
+"Sport Management Review",
+"Trends in Neuroscience and Education",
+"Acta Psychologica",
+"Addictive Behaviors",
+"Aggression and Violent Behavior",
+"Annales Médico-Psychologiques",
+"Applied Ergonomics",
+"Archives of Gerontology and Geriatrics",
+"Behavior Therapy",
+"Behaviour Research and Therapy",
+"Behavioural Processes",
+"Biochimica et Biophysica Acta: Molecular Basis of Disease",
+"Biological Psychology",
+"Brain and Cognition",
+"Brain and Language",
+"Child Abuse & Neglect",
+"Children and Youth Services Review",
+"Clinical Psychology Review",
+"Clinics in Geriatric Medicine",
+"Cognition",
+"Cognitive and Behavioral Practice",
+"Cognitive Development",
+"Cognitive Psychology",
+"Computers in Human Behavior",
+"Computers in Human Behavior Reports",
+"Consciousness and Cognition",
+"Contemporary Educational Psychology",
+"Current Research in Behavioral Sciences",
+"Developmental Review",
+"Early Childhood Research Quarterly",
+"European Journal of Obstetrics & Gynecology and Reproductive Biology",
+"European Journal of Trauma & Dissociation",
+"European Review of Applied Psychology",
+"Evolution and Human Behavior",
+"Experimental Gerontology",
+"Forensic Science International",
+"Forensic Science International: Genetics",
+"Forensic Science International: Mind and Law",
+"Geriatric Nursing",
+"Human Movement Science",
+"Human Resource Management Review",
+"Infant Behavior and Development",
+"Intelligence",
+"International Journal of Educational Research",
+"International Journal of Human-Computer Studies",
+"International Journal of Psychophysiology",
+"Journal of Adolescence",
+"Journal of Aging Studies",
+"Journal of Anxiety Disorders",
+"Journal of Applied Developmental Psychology",
+"Journal of Applied Research in Memory and Cognition",
+"Journal of Behavior Therapy and Experimental Psychiatry",
+"Journal of Business Research",
+"Journal of Business Venturing",
+"Journal of Contextual Behavioral Science",
+"Journal of Economic Behavior & Organization",
+"Journal of Economic Psychology",
+"Journal of Environmental Psychology",
+"Journal of Experimental Child Psychology",
+"Journal of Experimental Social Psychology",
+"Journal of Family Business Strategy",
+"Journal of Financial Economics",
+"Journal of Forensic and Legal Medicine",
+"Journal of Mathematical Psychology",
+"Journal of Memory and Language",
+"Journal of Neurolinguistics",
+"Journal of Nutrition Education and Behavior",
+"Journal of Obsessive-Compulsive and Related Disorders",
+"Journal of Psychiatric Research",
+"Journal of Psychosomatic Research",
+"Journal of Research in Personality",
+"Journal of Retailing and Consumer Services",
+"Journal of School Psychology",
+"Journal of Science and Medicine in Sport",
+"Journal of Substance Abuse Treatment",
+"Journal of the American Medical Directors Association",
+"Journal of Vocational Behavior",
+"Journal of World Business",
+"Learning and Individual Differences",
+"Learning and Motivation",
+"Legal Medicine",
+"Maturitas",
+"Mechanisms of Ageing and Development",
+"Methods in Psychology",
+"Neural Networks",
+"Neuropsychiatrie de l'Enfance et de l'Adolescence",
+"Neuropsychologia",
+"Neuroscience & Biobehavioral Reviews",
+"New Ideas in Psychology",
+"Nutrition",
+"Nutrition Research",
+"Organizational Behavior and Human Decision Processes",
+"Organizational Dynamics",
+"Parkinsonism & Related Disorders",
+"Personality and Individual Differences",
+"Pratiques Psychologiques",
+"Psychologie du Travail et des Organisations",
+"Psychologie Française",
+"Psychology of Sport and Exercise",
+"Research in Autism Spectrum Disorders",
+"Research in Developmental Disabilities",
+"Revista de Psicodidáctica",
+"Science & Justice",
+"Sexologies",
+"Sleep Medicine",
+"Soins: Gérontologie",
+"The Arts in Psychotherapy",
+"The International Journal of Management Education",
+"The Internet and Higher Education",
+"The Journal of Mathematical Behavior",
+"The Journal of Nutritional Biochemistry",
+"The Journal of Social Studies Research",
+"The Lancet Healthy Longevity",
+"The Leadership Quarterly",
+"Transportation Research Part F: Traffic Psychology and Behaviour",
+"Trends in Cognitive Sciences")
+
+
+```
+
+
+# WOSR Function
+This function below now pulls in papers specified by a given query.  
+It is advisable to use query_wos to find out how many records there are in a search - it can take hours if this is a large number, so you may want to specify an upper limit when deciding whether to proceed with search.
+
+```{r pullpapersfunction}
+
+pullpapers<-function(query){
+  # It's best to see how many records your query matches before actually
+  # downloading the data. To do this, call query_wos before running pull_wos:
+  myq<-query_wos(query, sid = sid) # shows N matching publications
+  #initialise in case of zero count
+  nrec<-0
+  mymax<-0
+  thisau<-''
+  if(myq$rec_cnt>0){
+    if (myq$rec_cnt<3000){
+    wos_data<-pull_wos(query,sid = sid) #key instruction for pulling in data
+    
+    nrec<-nrow(wos_data$publication)
+    myau<-wos_data$author #identify all authors
+    myt<-table(myau$display_name) #tabulate frequency of authors
+    mytt<-data.frame(myt)
+    max(mytt$Freq) #find highest N publications by one author
+    mymax<-max(mytt$Freq)
+    w<-which(mytt$Freq==mymax) #find the author with that N
+    thisau<-mytt$Var1[w[1]]
+    }
+  }
+  return(list(myq$rec_cnt,mymax,thisau)) #function returns N papers found, N for author with maximum N papers, and identity of that author
+} 
+```
+
+The next chunk can be used to just check if the function works. You need to wait for the papers to be extracted from WoS - this occurs in two steps and can take minutes or even hours.
+It is especially slow if there are any papers with more than 100 authors. 
+```{r pullpaperscheck}
+docheck <- 0 #change to 1 to run the check. 
+if(docheck==1){
+  query <- 'SO = ("Research in Autism Spectrum Disorders") AND PY = (2010) AND DT=("Article" OR "Review")'
+  
+  mybits<-pullpapers(query)
+}
+```
+
+We'll now compare various journals. 
+We have to specify a query in the correct format for wosr to recognise.
+There are some examples in wosr help.
+
+
+```{r makedt}
+journals <- data.frame(myj)
+#remove any with fewer than 10 papers
+journals$Narticle<-NA
+journals$Author<-NA
+journals$Nmax <- NA
+
+nj<-nrow(journals)
+
+for (j in 1:nj){
+  
+  thisj <-journals$myj[j]
+  print(j)
+  print(thisj)
+  mypy <- "(2015-2020)" #select range of publication years
+  #DT is document type - here specify Article or Review
+  query <- paste('SO = \"', thisj,'\" AND PY = ',mypy,' AND DT=(Article OR Review)')
+  mybits <- pullpapers(query)
+  journals$Narticle[j]<-unlist(mybits[1])
+  journals$Author[j]<-as.character(unlist(mybits[3]))
+  journals$Nmax[j]<-unlist(mybits[2])
+  
+}
+
+journals$p_prolific <- round(100*journals$Nmax/journals$Narticle,2)
+write.csv(journals,'elsevier.csv',row.names=F)
+
+```
+
+In the next chunk, a different set of journals is used, this time looking individually at different years.  
+
+
+```{r makeddy}
+x <- c('International Journal of Mental Health and Addiction','Journal of Behavioral Addictions','Journal of Developmental and Physical Disabilities','Developmental Neurorehabilitation','Research in Developmental Disabilities','Research in Autism Spectrum Disorders')
+y<-seq(2000,2020,1)
+
+dy <- expand.grid(Year = y,Journal = x )
+dy$Narticle<-NA
+dy$Author<-NA
+dy$Nmax<-NA
+
+startrow <-1
+
+#If you want to stop and start without losing data, you can reset startrow.
+if(startrow>1){
+  journaldt<-read.csv("dy.csv",stringsAsFactors=F)
+}
+mysearch<-startrow:nrow(dy)
+
+for (j in mysearch){
+  
+  thisj <-dy$Journal[j]
+  thisy <-dy$Year[j]
+  print(j)
+  print(thisj)
+  query <- paste('SO = \"', thisj,'\" AND PY = ',thisy,' AND DT=(Article OR Review)')
+  mybits <- pullpapers(query)
+  dy$Narticle[j]<-unlist(mybits[1])
+  dy$Author[j]<-as.character(unlist(mybits[3]))
+  dy$Nmax[j]<-unlist(mybits[2])
+  
+}
+
+dy$p_prolific <- round(100*dy$Nmax/dy$Narticle,2)
+write.csv(dy,'journal_dy.csv',row.names=F)
+
+```
+
