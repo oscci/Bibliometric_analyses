@@ -1,0 +1,141 @@
+---
+title: "Screening for PEPIOPs: Prolific editors publishing in own publications"
+output: html_notebook
+---
+
+Dated August 2020
+by D V M Bishop
+
+# Background
+Script to compute for individual journals the percentage of publications contributed by individual authors, and to create a table showing authors who have published more than a prespecified number of papers in that journal over a given time period. In the example below, I use time period 2015-2019, with a prespecified number of 15: i.e. this identifies people who are authoring on average 3 or more papers in a given journal every year. 
+
+After creating this file, it is necessary to manually check whether any of the prolific authors have an editorial role in the journal. The resulting file can then be read back in to the script to create a summary report.  
+
+Views vary on the issue of whether editors should publish in their own journal, and if so whether there should be limits on how much they publish there. The Committee on Publication Ethics, COPE, has guidelines for editors: https://publicationethics.org/resources/guidelines-new/short-guide-ethical-editing-new-editors:  
+
+_Can editors publish in their own journal?_   
+"While you should not be denied the ability to publish in your own journal, you must take extra precautions not to exploit your position or to create an impression of impropriety. Your journal must have a procedure for handling submissions from editors or members of the editorial board that will ensure that the peer review is handled independently of the author/editor. We also recommend that you describe the process in a commentary or similar note once the paper is published."  
+
+It would be possible to extend the analysis outlined here to include a column that indicates whether such a commentary is included with the paper, but that is beyond the scope of this exercise.  
+
+## Technical information
+
+The script requires that the user has a licence for Web of Science. If you have institutional access to Web of Science for routine literature searches, this should work.  The script uses the wosr package. This provides a link that allows one to pull in records from queries to Web of Science, provided the IP address is recognised as associated with a legitmate WoS licence.  
+https://www.rdocumentation.org/packages/wosr/versions/0.3.0  
+
+Note: Extraction of articles from Web of Science is a slow process, especially if the journal includes papers with more than 100 authors. It is hard to estimate in advance how long the script will take to run, but it is recommended that users start with a trial run with a small number of journal titles. It may be best to subsequently run the script for blocks of, say, 50 titles and save the outputs with different names. It is easy to combine these files subsequently when coding editorial affiliations, etc. 
+
+## Journals
+The script reads from a .csv file with one column that contains journal titles. Titles that are not recognised by wosr will be skipped over. These could either be titles that are not included in the Web of Science database, or titles that are spelled differently. If uncertain, it may be simplest to return to the regular Web of Science database to check out how a specific title is spelled. For instance, the word 'and' may be omitted from titles in the Web of Science version.  
+
+I was interested in journals relating to behavioural sciences/psychology by specific publishers, and I created lists by cutting and pasting from publisher websites. An alternative approach would be to create a list by searching Web of Science for a keyword in a recent time range, and then use Analyse Results to tabulate results by Source Title. This creates a tree plot but beneath it you will find a list of all titles, ordered by the number of papers that meet criteria. You can output this as .txt, and save as .csv. Once you have your journal list as .csv, you are ready to start. First load relevant packages.
+
+
+```{r setup, include=FALSE}
+require(tidyverse)
+require(gdata)
+require(dmm) #for unfactor
+require(stringr)
+```
+
+## Preparing to read files  
+Obtain a session identification code. You only need do this once per session. In my experience, it sometimes fails, even when accessing the script from a valid IP address with access to Web of Science. If you are working remotely and have access to WoS, you need to use VPN.
+
+```{r wosr.session}
+
+require(wosr) 
+#This gets the crucial session identifiers for using wosr
+sid<- auth(username = NULL,
+           password = NULL)
+
+
+```
+
+
+# WOSR Function
+This function below pulls in papers specified by a given query.  
+It is advisable to use query_wos to find out how many records there are in a search - it can take hours if this is a large number, so you may want to specify an upper limit when deciding whether to proceed with search. In the chunk below, journals with more than 4000 articles are ignored.
+
+The query argument is assembled in a later chunk. The highcut argument is specified by the user to specify how many papers are regarded as defining a prolific author. A row will be created in the output file for each author who exceeds this value.
+
+```{r pullpapersfunction}
+
+pullpapers<-function(query,highcut){
+  # query_wos allows you to see how many records there are 
+  #  before running pull_wos:
+  myq<-query_wos(query, sid = sid) # shows N matching publications
+  #initialise in case of zero count
+  nrec<-0
+  mymax<-0
+  thisau<-''
+  thisnum=0
+  if(myq$rec_cnt>0){
+    if (myq$rec_cnt<4000){ #ignore journals with more than 4000 articles
+      wos_data<-pull_wos(query,sid = sid) #key instruction for pulling in data
+      
+      nrec<-nrow(wos_data$publication)
+      myau<-wos_data$author #identify all authors
+      myt<-table(myau$display_name) #tabulate frequency of authors
+      mytt<-data.frame(myt)
+      w<-which(mytt$Freq> highcut) #find the authors with papers > highcut
+      thisau=NA
+      
+      if(length(w)>0) {thisau=mytt[w,1]
+      thisnum = mytt[w,2]} #thisau has all authors with 15+ papers
+    }#end if myq3000
+  }#end ifmy0
+  return(list(myq$rec_cnt,mymax,thisau,thisnum)) #function returns N papers found, N for author with maximum N papers, and identity of that author
+} 
+```
+
+The next chunk reads in journal titles and creates a query in the correct format for wosr to recognise for each one.
+There are some examples in wosr help.
+
+
+```{r makedt}
+myfile<-'APAjournals'
+jlist<-read.csv(paste0(myfile,'.csv'),stringsAsFactors=F)
+myj<-jlist[,1]
+journals <- data.frame(Journal=character(),
+                       Narticle=integer(), 
+                       Author=character(), 
+                       Nau.paper=integer())
+#default is to process whole file, but it may be advisable to break up into chunks
+startj <- 1
+endj <- length(myj)
+
+for (j in startj:endj){
+  thisj <- myj[j]
+  print(j)
+  print(thisj)
+  mypy <- "(2015-2019)" #select range of publication years
+  #DT is document type - here specify Article or Review
+  query <- paste('SO = \"', thisj,'\" AND PY = ',mypy,' AND DT=(Article OR Review)')
+  highcut <- 14 #we are going to focus on authors publishing more than this number of papers in the time range specified in mypy
+  mybits <- pullpapers(query,highcut)
+  aubits<-as.character(unlist(mybits[[3]]))
+  naubit <-mybits[[4]]
+  myrow<-length(aubits)
+  if(myrow>0){
+    addbit <- data.frame(Journal=character(myrow),
+                         Narticle=integer(myrow), 
+                         Author=character(myrow), 
+                         Nau.paper=integer(myrow))
+    addbit$Journal<-unfactor(addbit$Journal)
+    addbit$Author <- unfactor(addbit$Author)
+    addbit$Journal[1:myrow]<-thisj
+    addbit$Narticle[1:myrow]<-unlist(mybits[1])
+    
+    addbit$Author[1:myrow]<-aubits
+    addbit$Nau.paper[1:myrow]<-naubit
+    journals<-rbind(journals,addbit)
+  }
+} #next j
+
+journals$p_prolific <- round(100*journals$Nau.paper/journals$Narticle,2)
+write.csv(journals,paste0(myfile,'_',startj,'_',endj,'.csv'),row.names=F)
+
+```
+
+When you have created this file, you can sort it to identify highly prolific authors. You have then to manually add a column that denotes the editorial role of the author, if any.
+
